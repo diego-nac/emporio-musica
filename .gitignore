@@ -1,0 +1,16 @@
+.venv/
+.env
+.env.*
+!.env.example
+secrets.toml
+.streamlit/secrets.toml
+work/
+outputs/
+data/raw/
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
