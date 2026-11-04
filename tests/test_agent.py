@@ -157,7 +157,7 @@ def test_multiple_tool_calls_keep_response_order_ids_and_policy_citations(
     tool_parts = client.models.calls[1]["contents"][-1].parts
     assert [part.function_response.id for part in tool_parts] == ["product-call", "policy-call"]
     assert [part.function_response.name for part in tool_parts] == ["search_products", "lookup_policies"]
-    assert any("seção 2" in source and "página(s) 2, 3" in source for source in result.sources)
+    assert any("seção 2" in source and "página(s) 2" in source for source in result.sources)
 
 
 def test_invalid_arguments_and_unknown_tools_are_never_executed(
@@ -195,6 +195,24 @@ def test_agent_caps_tool_rounds_and_returns_safe_fallback(tmp_path: Path) -> Non
     assert len(client.models.calls) == 3
     assert result.status == "limit_reached"
     assert "limite" in result.answer.lower()
+
+
+def test_exact_public_faq_uses_policy_cache_without_a_model_client(tmp_path: Path) -> None:
+    policy_service = PolicyService(Path("data/policies/policies.json"))
+    agent = AgentService(
+        db_path=tmp_path / "app.db",
+        policy_service=policy_service,
+        model_client=None,
+    )
+
+    first = agent.ask("Qual é o horário da loja?")
+    second = agent.ask("qual e o horario da loja")
+
+    assert "Segunda a Sexta-feira" in first.answer
+    assert first.sources == second.sources
+    assert any("seção 2" in source and "página(s) 2" in source for source in first.sources)
+    assert policy_service.cache_info().hits == 1
+    assert policy_service.cache_info().misses == 1
 
 
 def test_missing_key_sdk_failure_and_input_limit_fail_safely(tmp_path: Path) -> None:

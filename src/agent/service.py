@@ -14,7 +14,7 @@ from src.agent.gemini_client import DEFAULT_MODEL
 from src.agent.schemas import OrderLookupArgs, PolicyLookupArgs, ProductSearchArgs
 from src.data.repositories import DemoIdentity, get_owned_order, search_products
 from src.domain.session import get_demo_identity
-from src.policies.catalog import PolicyService
+from src.policies.catalog import PolicyService, normalize_query
 
 MAX_TOOL_ROUNDS = 3
 MAX_USER_CHARS = 8000
@@ -224,13 +224,35 @@ class AgentService:
         self,
         user_message: str,
         history: Sequence[Mapping[str, str]] | None = None,
+        demo_identity: DemoIdentity | None = None,
     ) -> AgentResult:
         if not isinstance(user_message, str) or not user_message.strip() or len(user_message) > MAX_USER_CHARS:
             return AgentResult("A mensagem está vazia ou excede o limite permitido.", status="invalid_input")
 
+        normalized_message = normalize_query(user_message)
+        if normalized_message in self.policy_service.FAQ_WHITELIST:
+            lookup = self.policy_service.lookup(user_message)
+            if lookup.status == "ok":
+                answer = "\n\n".join(
+                    f"**{section.title}**\n{section.content}" for section in lookup.sections
+                )
+                sources = tuple(
+                    f"Manual de Políticas, seção {section.id} — {section.title}, página(s) "
+                    + (", ".join(str(page) for page in section.pages) or "não indicada")
+                    for section in lookup.sections
+                )
+                return AgentResult(answer, sources)
+
+        if self.model_client is None:
+            return AgentResult(
+                "A consulta ao catálogo de políticas funciona sem Gemini. Para outras perguntas, "
+                "configure GEMINI_API_KEY no ambiente ou nos secrets da hospedagem.",
+                status="configuration_required",
+            )
+
         contents = self._history_contents(history)
         contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
-        identity = get_demo_identity()
+        identity = demo_identity or get_demo_identity()
         sources: list[str] = []
 
         for _round in range(MAX_TOOL_ROUNDS):

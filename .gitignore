@@ -6,6 +6,7 @@ secrets.toml
 .streamlit/secrets.toml
 work/
 outputs/
+.playwright-mcp/
 data/raw/
 data/*.db
 data/*.sqlite
