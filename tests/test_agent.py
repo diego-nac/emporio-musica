@@ -99,8 +99,30 @@ def test_allowed_product_tool_is_validated_and_signature_content_is_preserved(
     assert seen["available_only"] is False
     first_config = client.models.calls[0]["config"]
     assert first_config.automatic_function_calling.disable is True
-    # The exact model Content object (including the thought signature) is reused.
+                                                                                 
     assert client.models.calls[1]["contents"][-2] is call_response.content
+    assert client.models.calls[1]["contents"][-1].role == "user"
+
+
+def test_followup_identifies_sources_from_previous_context(tmp_path: Path) -> None:
+    agent, _ = service_with(tmp_path, direct("O desconto é de 5%."))
+    history = [{"role": "assistant", "content": "PIX tem 5% de desconto.", "sources": ("Manual, seção 3",)}]
+
+    result = agent.ask("Qual é o desconto?", history=history)
+
+    assert result.sources == ("Contexto anterior: Manual, seção 3",)
+
+
+def test_tool_trace_contains_parameterized_sql_and_model_exchange(tmp_path: Path) -> None:
+    from src.data.db import ingest_csvs
+
+    agent, _ = service_with(tmp_path, tool_call("search_products", {"query": "Yamaha"}), direct("Encontrei opções."))
+    ingest_csvs(Path("data/demo"), agent.db_path)
+    result = agent.ask("Quais produtos Yamaha?")
+    sql = next(event for event in result.trace if event["type"] == "sql")
+    assert "?" in sql["sql"]
+    assert any("Yamaha" in str(value) for value in sql["parameters"])
+    assert {"model_request", "model_response", "tool_request", "tool_response"} <= {event["type"] for event in result.trace}
 
 
 def test_order_tool_uses_backend_identity_and_exposes_no_customer_record(

@@ -91,5 +91,21 @@ def test_admin_sees_session_metrics_and_safe_missing_gemini_error(monkeypatch, t
     assert metrics["Consultas"] == "1"
     assert metrics["Erros / configuração"] == "1"
     assert "Última latência" in metrics
-    assert "Cache FAQ — hits" in metrics
-    assert "Cache FAQ — misses" in metrics
+    assert "Cache FAQ - hits" in metrics
+    assert "Cache FAQ - misses" in metrics
+
+
+def test_chat_history_and_branch_preserve_original(monkeypatch, tmp_path: Path) -> None:
+    set_access_env(monkeypatch, tmp_path / "history.db")
+    at = login(AppTest.from_file(str(APP_PATH)).run(), "test-admin-key")
+    at.chat_input[0].set_value("garantia").run()
+    original_id = at.session_state["active_chat"]
+    assert len(at.session_state["chats"][original_id]["messages"]) == 2
+    next(b for b in at.button if b.label == "Nova conversa").click().run()
+    assert at.session_state["active_chat"] != original_id
+    next(b for b in at.button if b.label.startswith("garantia - ")).click().run()
+    assert at.session_state["active_chat"] == original_id
+    next(b for b in at.button if b.label == "Continuar a partir deste turno").click().run()
+    assert at.session_state["active_chat"] != original_id
+    assert len(at.session_state["chats"][original_id]["messages"]) == 2
+    assert len(at.session_state["chats"][at.session_state["active_chat"]]["messages"]) == 2

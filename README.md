@@ -1,40 +1,68 @@
-# Empório da Música — assistente demonstrativo
+# Empório da Música
 
-Aplicação local de atendimento com Streamlit, SQLite e Gemini (`google-genai`). O catálogo e os pedidos são snapshots CSV; não há integração de loja em tempo real. A UI inicia um banco reproduzível com catálogo do exercício e pedidos/clientes sintéticos em `data/demo/`. O seletor de perfil é uma simulação, não autenticação de cliente.
+Aplicação de atendimento demonstrativa com Streamlit, SQLite e Google Gemini. O catálogo é carregado dos CSVs locais e os pedidos usam dados demonstrativos.
+
+## Configuração
+
+Configure `ADMIN_ACCESS_KEY`, `DEMO_ACCESS_KEY`, `GEMINI_API_KEY` e `GEMINI_MODEL` em `.streamlit/secrets.toml`. As duas chaves de acesso devem ser diferentes.
+
+Exemplo de arquivo local, substituindo os valores pelos seus:
+
+```toml
+ADMIN_ACCESS_KEY = "uma-chave-de-administrador"
+DEMO_ACCESS_KEY = "uma-chave-de-demonstracao-diferente"
+GEMINI_API_KEY = "sua-chave-google"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+```
+
+O modelo é configurável e precisa estar disponível na conta Google com suporte a chamadas de ferramentas. O arquivo de secrets é local e não deve ser enviado ao repositório.
+
+## Executar com Docker
+
+```bash
+make build
+make up
+```
+
+Acesse http://localhost:8503. Use `make restart` para reiniciar e `make down` para parar.
 
 ## Executar localmente
 
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-Preencha `ADMIN_ACCESS_KEY` e `DEMO_ACCESS_KEY` com valores distintos e `GEMINI_API_KEY` no arquivo local de secrets ou forneça essas variáveis pelo ambiente. Não coloque chaves em chat, código, commits ou screenshots. `GEMINI_MODEL` aceita configuração; o padrão é `gemini-3.5-flash-lite`. Disponibilidade e quota desse identificador precisam ser verificadas ao configurar uma chave. `DB_PATH` seleciona o SQLite; por padrão é `work/app.db`. Sem `GEMINI_API_KEY`, apenas as perguntas exatas de FAQ pública respondem; demais consultas exibem configuração necessária.
+O banco de demonstração é gerado a partir de `data/demo/` na primeira execução. O histórico das conversas permanece apenas durante a sessão. O sistema consulta dados e orienta, sem executar compras, cancelamentos ou reembolsos.
 
-```bash
-python -m streamlit run app.py
-```
+Para importar outros CSVs compatíveis, consulte as opções de `python scripts/ingest.py --help`. O caminho do banco pode ser configurado por `DB_PATH`.
 
-O padrão é `work/app.db`: se esse banco já existe, ele é preservado e usado. Para iniciar explicitamente uma demo limpa, defina `DB_PATH=work/demo.db` antes de executar; a aplicação cria esse banco a partir de `data/demo/`.
+## Decisões técnicas
 
-Para ingerir os CSVs originais no banco local (não necessário para a demo), use `python scripts/ingest.py --source-dir CAMINHO --db-path work/app.db`. Esses dados ficam ignorados pelo Git; avalie minimização antes de compartilhar qualquer cópia. A inicialização concorrente de banco usa `fcntl` e destina-se a Linux/macOS.
+- **Interface:** Streamlit reduz a configuração necessária para experimentar o chat em Python.
+- **Modelo:** Google Gemini por API, com identificador configurável, interpreta a conversa e solicita ferramentas. A disponibilidade e a cota dependem da conta utilizada.
+- **Agente:** um único serviço executa chamadas de ferramentas de leitura com limite de rodadas. O modelo não executa SQL arbitrário. O prompt estabelece persona, limites de atuação e necessidade de fundamentar informações nas ferramentas.
+- **Dados:** SQLite armazena os dados importados dos CSVs, com consultas parametrizadas. O catálogo e os pedidos são snapshots, sem atualização em tempo real.
+- **Políticas:** recuperação local por regras e correspondência normalizada, com cache limitado para perguntas frequentes. Não utiliza embeddings nem busca vetorial. As referências apontam para a transcrição do manual.
+- **Sessão:** histórico e detalhes de ferramentas ficam na sessão do Streamlit e são descartados ao sair ou reiniciar. As duas chaves controlam o acesso ao protótipo. O perfil de cliente é simulado, não uma autenticação real.
 
-## Arquitetura e operação
+## Limitações e suposições
 
-`src/data/` valida e ingere as seis tabelas para SQLite, com valores monetários em centavos e consultas parametrizadas. `src/policies/` disponibiliza seções do manual e cache limitado apenas para FAQs públicas reconhecidas. `src/agent/` usa um ciclo manual Gemini com ferramentas de leitura allowlist e limite de rodadas. Pedidos recebem identidade resolvida no backend; o modelo não recebe IDs de cliente nem registros brutos. O histórico de chat permanece somente na sessão.
-
-As duas chaves de acesso independentes são `ADMIN_ACCESS_KEY` e `DEMO_ACCESS_KEY`; a primeira habilita métricas agregadas apenas da sessão. Em Streamlit Community Cloud, configure os mesmos valores em **App settings → Secrets** e mantenha `GEMINI_API_KEY`, `GEMINI_MODEL` e, se necessário, `DB_PATH` ali. O repositório público e a hospedagem são objetivo de entrega, mas esta execução só prepara os arquivos localmente: não cria repositório remoto nem publica aplicação.
-
-## Testes e limitações
-
-Rode `python -m pytest -q` e `python -m compileall -q app.py src scripts tests`. Testes do agente usam cliente falso para validar fluxo sem API; nenhum teste real Gemini foi executado. Latência e qualidade do modelo não foram medidas. Guardrails reduzem risco, mas não detectam toda prompt injection. Não há autenticação real de cliente, escrita/cancelamento de pedido, persistência de conversas, vetores/RAG semântico ou fontes em tempo real. O manual pode conter ambiguidades; a aplicação cita seções e não resolve contradições por conta própria.
+- Os preços, estoques e pedidos demonstrativos não representam uma integração com a operação da loja. Alterações nos CSVs exigem nova ingestão.
+- A busca por políticas é lexical e pode não identificar todas as formas de uma pergunta. Há respostas que dependem do modelo e podem exigir revisão.
+- Em testes conversacionais, algumas buscas atingiram o limite de ferramentas e houve respostas fora do escopo ou interpretações indevidas de políticas ambíguas. O prompt foi ajustado depois, mas uma nova rodada completa ainda é necessária.
+- O manual informa condições de frete para valores abaixo e acima de R$ 500, sem definir explicitamente o valor exato. Essa situação precisa de esclarecimento humano.
+- O atendimento não finaliza compras, registra solicitações nem altera pedidos. A autenticação de clientes e a privacidade de produção exigiriam uma solução própria.
+- Com mais tempo: melhorar o tratamento de chamadas repetidas, avaliar as respostas em conversas completas, adicionar observabilidade e autenticação de clientes, e validar a atualização dos dados com a operação.
 
 ## Exemplos
 
-Os roteiros em [`examples/roteiros.md`](examples/roteiros.md) são exemplos esperados, não transcrições de chamadas reais Gemini. A FAQ de horário foi verificada no teste local determinístico, sem Gemini.
+Há quatro trechos de conversas executadas com dados demonstrativos em [examples](examples/), cobrindo promoções, trocas, privacidade e pagamento. Os exemplos são snapshots de uma execução e seus valores podem mudar com os dados.
 
-## Assistência de IA
+## Testes
 
-
+```bash
+python -m pytest -q
+```

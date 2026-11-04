@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import streamlit as st
@@ -54,6 +57,10 @@ def _render_message(message: dict) -> None:
             with st.expander("Fontes consultadas"):
                 for source in sources:
                     st.caption(source)
+                for event in message.get("trace", ()):
+                    if event.get("type") == "sql":
+                        st.code(event["sql"], language="sql")
+                        st.caption(f"Parâmetros: {event['parameters']}")
         status = message.get("status", "ok")
         if status not in {"ok", "limit_reached"}:
             st.caption("A resposta ficou limitada pela configuração ou pelo resultado disponível.")
@@ -65,14 +72,62 @@ def _render_admin_metrics(policy_service) -> None:
     st.sidebar.subheader("Métricas desta sessão")
     st.sidebar.metric("Consultas", int(metrics["requests"] or 0))
     st.sidebar.metric("Erros / configuração", int(metrics["errors"] or 0))
-    st.sidebar.metric("Última latência", f"{metrics['last_latency_ms']} ms" if metrics["last_latency_ms"] is not None else "—")
-    st.sidebar.metric("Cache FAQ — hits", int(metrics["cache_hits"] or 0))
-    st.sidebar.metric("Cache FAQ — misses", int(metrics["cache_misses"] or 0))
+    st.sidebar.metric("Última latência", f"{metrics['last_latency_ms']} ms" if metrics["last_latency_ms"] is not None else "-")
+    st.sidebar.metric("Cache FAQ - hits", int(metrics["cache_hits"] or 0))
+    st.sidebar.metric("Cache FAQ - misses", int(metrics["cache_misses"] or 0))
     st.sidebar.caption(f"Cache público em processo: {cache_info.currsize}/{cache_info.maxsize} entradas.")
 
 
 def _clear_messages_for_profile_change() -> None:
-    st.session_state["messages"] = []
+    st.session_state.pop("active_chat", None)
+
+
+def _new_chat(profile: str, messages: list | None = None) -> str:
+    chat_id = uuid4().hex
+    st.session_state.setdefault("chats", {})[chat_id] = {
+        "profile": profile, "title": "Nova conversa", "messages": list(messages or []),
+        "created_at": datetime.now(ZoneInfo("America/Fortaleza")).strftime("%d/%m/%Y %H:%M"),
+    }
+    st.session_state["active_chat"] = chat_id
+    return chat_id
+
+
+def _render_details(value: object) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"thought_signature", "type"}:
+                continue
+            st.markdown(f"**{str(key).replace('_', ' ').capitalize()}**")
+            _render_details(item)
+    elif isinstance(value, (list, tuple)):
+        if not value:
+            st.caption("Nenhum")
+        for index, item in enumerate(value, 1):
+            if isinstance(item, (dict, list, tuple)):
+                st.caption(f"Item {index}")
+                _render_details(item)
+            else:
+                st.write(item)
+    else:
+        st.write(value if value is not None else "Não informado")
+
+
+def _render_turn_trace(message: dict) -> None:
+    labels = {
+        "config": "Modelo e configurações", "model_request": "Envio ao modelo",
+        "model_response": "Resposta do modelo", "tool_request": "Chamada de ferramenta",
+        "tool_response": "Resposta da ferramenta", "sql": "Consulta SQL",
+        "faq": "Consulta de política", "model_error": "Erro do modelo", "final": "Resposta final",
+    }
+    for event in message.get("trace", ()):
+        kind = event.get("type", "evento")
+        with st.expander(labels.get(kind, kind.replace("_", " ").capitalize())):
+            if kind == "sql":
+                st.code(event.get("sql", ""), language="sql")
+                st.markdown("**Parâmetros**")
+                _render_details(event.get("parameters", []))
+            else:
+                _render_details(event)
 
 
 def _render_chat() -> None:
@@ -82,7 +137,8 @@ def _render_chat() -> None:
         _render_login()
         return
 
-    st.title("Empório da Música")
+    header, header_action = st.columns([12, 1], vertical_alignment="center")
+    header.title("Empório da Música")
     st.caption("Demonstração baseada em snapshot CSV local; os dados não são consultados em tempo real.")
     if not runtime.load_gemini_key():
         st.info("As perguntas frequentes de políticas estão disponíveis. Outras consultas precisam de GEMINI_API_KEY configurada.")
@@ -102,6 +158,16 @@ def _render_chat() -> None:
         if st.button("Sair", use_container_width=True):
             clear_session(st.session_state)
             st.rerun()
+        chats = st.session_state.setdefault("chats", {})
+        if st.button("Nova conversa", use_container_width=True):
+            _new_chat(profile)
+            st.rerun()
+        st.markdown("#### Conversas nesta sessão")
+        for chat_id, chat in reversed(list(chats.items())):
+            label = f"{chat['title']} - {chat.get('created_at', 'data indisponível')}"
+            if chat["profile"] == profile and st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+                st.session_state["active_chat"] = chat_id
+                st.rerun()
 
     try:
         database_path = runtime.ensure_database(runtime.get_database_path())
@@ -113,25 +179,53 @@ def _render_chat() -> None:
     if can_view_metrics(role):
         _render_admin_metrics(policy_service)
 
-    messages = st.session_state.setdefault("messages", [])
+    active_chat = st.session_state.get("active_chat")
+    if active_chat not in chats or chats[active_chat]["profile"] != profile:
+        active_chat = _new_chat(profile)
+    chat = chats[active_chat]
+    messages = chat["messages"]
+
+    if can_view_metrics(role):
+        with header_action.popover("❔", help="Ver detalhes dos turnos", use_container_width=True):
+            st.subheader("Detalhes dos turnos")
+            turns = [(i, message) for i, message in enumerate(messages) if message.get("role") == "assistant"]
+            if turns:
+                selected = st.selectbox("Selecionar turno", range(len(turns)), format_func=lambda n, turns=turns, messages=messages: f"{n + 1}. {messages[turns[n][0] - 1].get('content', '')[:45]}", key=f"details_turn_{active_chat}")
+                index, selected_message = turns[selected]
+                st.caption("Interações entre o assistente, o modelo e as ferramentas")
+                _render_turn_trace(selected_message)
+            else:
+                st.caption("Envie uma mensagem para ver os detalhes.")
+    if messages:
+        with st.sidebar.expander("Voltar a um turno"):
+            turns = [i for i, message in enumerate(messages) if message.get("role") == "assistant"]
+            if turns:
+                selected = st.selectbox("Selecionar turno", range(len(turns)), format_func=lambda n: f"{n + 1}. {messages[turns[n] - 1].get('content', '')[:45]}", key=f"turn_{active_chat}")
+                if st.button("Continuar a partir deste turno", key=f"branch_{active_chat}"):
+                    _new_chat(profile, messages[:turns[selected] + 1])
+                    st.rerun()
     for message in messages:
         _render_message(message)
 
     prompt = st.chat_input("Como posso ajudar?")
     if prompt:
+        if not messages:
+            chat["title"] = prompt[:45]
         messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt, unsafe_allow_html=False)
         metrics = st.session_state.setdefault("session_metrics", _empty_metrics())
         cache_before = policy_service.cache_info()
         started = time.perf_counter()
         try:
-            with st.spinner("Consultando..."):
+            with st.chat_message("assistant"), st.spinner("Digitando..."):
                 result = runtime.run_chat_turn(
                     db_path=database_path,
                     policy_service=policy_service,
                     message=prompt,
                     demo_profile=profile,
                     history=[
-                        {"role": item["role"], "content": item["content"]}
+                        {"role": item["role"], "content": item["content"], "sources": item.get("sources", ())}
                         for item in messages[:-1]
                         if item.get("role") in {"user", "assistant"}
                     ],
@@ -154,6 +248,7 @@ def _render_chat() -> None:
                 "content": result.answer,
                 "sources": result.sources,
                 "status": result.status,
+                "trace": result.trace,
             }
         )
         st.rerun()

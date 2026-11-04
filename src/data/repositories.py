@@ -1,9 +1,18 @@
 import json
 import sqlite3
+from contextvars import ContextVar
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+
+sql_trace: ContextVar[list[dict] | None] = ContextVar("sql_trace", default=None)
+
+
+def _record_sql(sql: str, parameters: list | tuple, *, private: bool = False) -> None:
+    trace = sql_trace.get()
+    if trace is not None:
+        trace.append({"type": "sql", "sql": sql.strip(), "parameters": ["[protegido]"] * len(parameters) if private else list(parameters)})
 
 
 @dataclass(frozen=True)
@@ -122,6 +131,7 @@ def search_products(
         LIMIT ?
     """
     parameters.append(limit)
+    _record_sql(sql, parameters)
     with closing(_open_readonly(db_path)) as connection:
         rows = connection.execute(sql, parameters).fetchall()
 
@@ -165,6 +175,7 @@ def get_owned_order(db_path: Path, order_id: str, identity: DemoIdentity) -> Ord
         WHERE o.order_id = ? AND o.customer_id = ?
         ORDER BY p.name COLLATE NOCASE
     """
+    _record_sql(sql, (order_id, identity.customer_id), private=True)
     with closing(_open_readonly(db_path)) as connection:
         rows = connection.execute(sql, (order_id, identity.customer_id)).fetchall()
     if not rows:

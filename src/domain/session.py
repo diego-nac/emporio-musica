@@ -8,7 +8,7 @@ from src.data.repositories import DemoIdentity
 from src.security.auth import AppRole, authenticate
 
 
-# This ID is a backend fixture selector, never supplied by the model or login form.
+                                                                                   
 _DEMO_PROFILES = {
     "Cliente Demonstração": DemoIdentity(customer_id="3"),
     "Visitante sem pedidos": DemoIdentity(customer_id="__demo_no_orders__"),
