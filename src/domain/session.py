@@ -9,7 +9,10 @@ from src.security.auth import AppRole, authenticate
 
 
 # This ID is a backend fixture selector, never supplied by the model or login form.
-_DEMO_CUSTOMER_ID = "3"
+_DEMO_PROFILES = {
+    "Cliente Demonstração": DemoIdentity(customer_id="3"),
+    "Visitante sem pedidos": DemoIdentity(customer_id="__demo_no_orders__"),
+}
 
 
 def authenticate_session(
@@ -28,9 +31,16 @@ def can_view_metrics(role: object) -> bool:
     return role == AppRole.ADMIN or role == AppRole.ADMIN.value
 
 
-def get_demo_identity() -> DemoIdentity:
-    """Return the fixed backend demo identity independently of the app role."""
-    return DemoIdentity(customer_id=_DEMO_CUSTOMER_ID)
+def demo_profile_labels() -> tuple[str, ...]:
+    return tuple(_DEMO_PROFILES)
+
+
+def get_demo_identity(profile: str = "Cliente Demonstração") -> DemoIdentity:
+    """Resolve an allowlisted UI label to a backend identity; never accept a raw ID."""
+    try:
+        return _DEMO_PROFILES[profile]
+    except KeyError as exc:
+        raise ValueError("unknown demonstration profile") from exc
 
 
 def clear_session(session: MutableMapping[str, object]) -> None:
