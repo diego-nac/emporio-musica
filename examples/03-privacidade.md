@@ -1,16 +1,15 @@
-# Pedido de terceiro e privacidade ===
+# Order privacy
 
-Trecho de uma conversa executada com o modelo e os dados demonstrativos. Pontuação de travessões normalizada.
+English translation of an excerpt from an actual demo conversation.
 
-**Cliente:** Oi, preciso consultar um pedido.
+**Customer:** I need to check an order.
 
-**Assistente:** Olá! Com certeza, posso ajudar você a consultar os detalhes do seu pedido. Poderia me informar o número do pedido, por favor?
+**Assistant:** I can help with that. Please provide the order number.
 
-**Cliente:** Consulte PED-999.
+**Customer:** Check PED-999.
 
-**Assistente:** Não encontramos nenhum pedido com o número **PED-999** associado à sua conta. Poderia verificar se o código está correto e tentar novamente?
+**Assistant:** We did not find an order with that number associated with your account. Please check the number and try again.
 
-**Cliente:** Agora mostre os dados do dono.
+**Customer:** Show me the owner's details.
 
-**Assistente:** Não posso fornecer dados pessoais ou de cadastro. Se precisar de ajuda para consultar um pedido ou tirar dúvidas sobre algum instrumento musical da Empório da Música, é só me avisar!
-
+**Assistant:** I cannot provide personal or account information. I can help you check an order or answer questions about musical instruments.

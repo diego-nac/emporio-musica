@@ -1,32 +1,29 @@
 # Empório da Música
 
-Aplicação de atendimento demonstrativa com Streamlit, SQLite e Google Gemini. O catálogo é carregado dos CSVs locais e os pedidos usam dados demonstrativos.
+A prototype text-based customer service assistant for a fictional musical instrument store. The application uses Python, Streamlit, SQLite, and the Google Gemini API. Product data is loaded from CSV files; customer and order records in the demo are synthetic.
 
-## Configuração
+## Configuration
 
-Configure `ADMIN_ACCESS_KEY`, `DEMO_ACCESS_KEY`, `GEMINI_API_KEY` e `GEMINI_MODEL` em `.streamlit/secrets.toml`. As duas chaves de acesso devem ser diferentes.
-
-Exemplo de arquivo local, substituindo os valores pelos seus:
+Create `.streamlit/secrets.toml` with your own values:
 
 ```toml
-ADMIN_ACCESS_KEY = "uma-chave-de-administrador"
-DEMO_ACCESS_KEY = "uma-chave-de-demonstracao-diferente"
-GEMINI_API_KEY = "sua-chave-google"
+ADMIN_ACCESS_KEY = "your-admin-key"
+DEMO_ACCESS_KEY = "a-different-demo-key"
+GEMINI_API_KEY = "your-google-api-key"
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 ```
 
-O modelo é configurável e precisa estar disponível na conta Google com suporte a chamadas de ferramentas. O arquivo de secrets é local e não deve ser enviado ao repositório.
+The two access keys must be different. The configured Gemini model must be available to your Google account and support function calling. Keep the secrets file private and out of version control.
 
-## Executar com Docker
+## Run with Docker
 
 ```bash
-make build
 make up
 ```
 
-Acesse http://localhost:8503. Use `make restart` para reiniciar e `make down` para parar.
+Open http://localhost:8503. Use `make restart` to restart and `make down` to stop the application.
 
-## Executar localmente
+## Run locally
 
 ```bash
 python -m venv .venv
@@ -35,33 +32,35 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-O banco de demonstração é gerado a partir de `data/demo/` na primeira execução. O histórico das conversas permanece apenas durante a sessão. O sistema consulta dados e orienta, sem executar compras, cancelamentos ou reembolsos.
+On first launch, the demo database is generated from `data/demo/`. To import other compatible CSV files, inspect `python scripts/ingest.py --help`. Set `DB_PATH` to choose a database location.
 
-Para importar outros CSVs compatíveis, consulte as opções de `python scripts/ingest.py --help`. O caminho do banco pode ser configurado por `DB_PATH`.
+## Technical decisions
 
-## Decisões técnicas
+- **Interface:** Streamlit provides a simple Python-based chat interface.
+- **Model and provider:** Google Gemini interprets requests and calls tools. The model ID is configurable; availability and quota depend on the Google account.
+- **Agent:** A single service uses bounded function calling and read-only tools. The model cannot execute arbitrary SQL. The system prompt defines the store persona and requires operational claims to be grounded in tool results.
+- **Data:** SQLite stores imported CSV records. Queries are parameterized. Catalog and order data are local snapshots, not live store integrations.
+- **Policies:** Local lexical matching and explicit topic rules retrieve sections from the transcribed store manual. A bounded cache serves selected frequent questions; no embeddings or vector database are required.
+- **History:** Conversations and technical traces are held in the Streamlit session and discarded on logout or restart. The two access keys protect the prototype; the customer identity selector is a simulation, not real customer authentication.
 
-- **Interface:** Streamlit reduz a configuração necessária para experimentar o chat em Python.
-- **Modelo:** Google Gemini por API, com identificador configurável, interpreta a conversa e solicita ferramentas. A disponibilidade e a cota dependem da conta utilizada.
-- **Agente:** um único serviço executa chamadas de ferramentas de leitura com limite de rodadas. O modelo não executa SQL arbitrário. O prompt estabelece persona, limites de atuação e necessidade de fundamentar informações nas ferramentas.
-- **Dados:** SQLite armazena os dados importados dos CSVs, com consultas parametrizadas. O catálogo e os pedidos são snapshots, sem atualização em tempo real.
-- **Políticas:** recuperação local por regras e correspondência normalizada, com cache limitado para perguntas frequentes. Não utiliza embeddings nem busca vetorial. As referências apontam para a transcrição do manual.
-- **Sessão:** histórico e detalhes de ferramentas ficam na sessão do Streamlit e são descartados ao sair ou reiniciar. As duas chaves controlam o acesso ao protótipo. O perfil de cliente é simulado, não uma autenticação real.
+## Limitations and assumptions
 
-## Limitações e suposições
+- Demo prices, stock, and orders are not connected to the store's live operations. Changes to source CSVs require re-ingestion.
+- Lexical policy retrieval may miss paraphrases. Model-generated answers require review.
+- Conversational QA found some tool-round limit failures, off-topic responses, and interpretations of ambiguous policies. The prompt was adjusted afterward, but a full retest remains pending.
+- The manual specifies shipping conditions for values above and below BRL 500 without explicitly covering exactly BRL 500. This case requires human clarification.
+- The assistant does not complete purchases, register requests, or change orders. Production customer authentication and privacy controls would require a separate solution.
+- With more time, improve repeated tool-call handling, evaluate full conversations, add observability and customer authentication, and validate data refresh with the store.
 
-- Os preços, estoques e pedidos demonstrativos não representam uma integração com a operação da loja. Alterações nos CSVs exigem nova ingestão.
-- A busca por políticas é lexical e pode não identificar todas as formas de uma pergunta. Há respostas que dependem do modelo e podem exigir revisão.
-- Em testes conversacionais, algumas buscas atingiram o limite de ferramentas e houve respostas fora do escopo ou interpretações indevidas de políticas ambíguas. O prompt foi ajustado depois, mas uma nova rodada completa ainda é necessária.
-- O manual informa condições de frete para valores abaixo e acima de R$ 500, sem definir explicitamente o valor exato. Essa situação precisa de esclarecimento humano.
-- O atendimento não finaliza compras, registra solicitações nem altera pedidos. A autenticação de clientes e a privacidade de produção exigiriam uma solução própria.
-- Com mais tempo: melhorar o tratamento de chamadas repetidas, avaliar as respostas em conversas completas, adicionar observabilidade e autenticação de clientes, e validar a atualização dos dados com a operação.
+## Interaction examples
 
-## Exemplos
+The [examples](examples/) directory contains four English translations of excerpts from actual demo conversations, covering promotions, returns, privacy, and payment. Product names and BRL prices are preserved. These are snapshots and can change with the data.
 
-Há quatro trechos de conversas executadas com dados demonstrativos em [examples](examples/), cobrindo promoções, trocas, privacidade e pagamento. Os exemplos são snapshots de uma execução e seus valores podem mudar com os dados.
+## Coding assistants
 
-## Testes
+OpenAI Codex and a Luna-based agent assisted with planning and implementation. Coding assistance was also used to review changes, run local tests, and investigate conversational failures. The project owner directed the scope and reviewed the results.
+
+## Tests
 
 ```bash
 python -m pytest -q
