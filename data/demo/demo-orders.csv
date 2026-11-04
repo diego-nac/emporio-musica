@@ -1,0 +1,3 @@
+order_id,customer_id,order_date,status,total_brl,payment_method,tracking_code,estimated_delivery,notes
+DEMO-001,3,2026-11-01,shipped,599.90,PIX,DEMO-TRACK-001,2026-11-08,
+DEMO-002,3,2026-11-02,processing,849.00,PIX,,,

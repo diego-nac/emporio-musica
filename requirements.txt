@@ -1,0 +1,4 @@
+google-genai==2.34.0
+pydantic==2.14.2
+pytest==9.2.0
+streamlit==1.66.1
